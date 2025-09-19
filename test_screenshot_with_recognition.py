@@ -18,12 +18,16 @@ SERVER_CONFIG = {
             "ANDROID_HOME_SDK_ROOT": "/Users/raiko.funakami/Library/Android/sdk",
             "ANDROID_SDK_ROOT": "/Users/raiko.funakami/Library/Android/sdk",
         }
-    }
+    },
+    "jarvis-appium-sse": {
+        "url": "http://localhost:7777/sse",
+        "transport": "sse",
+    },
 }
 
 async def main():
     client = MultiServerMCPClient(SERVER_CONFIG)
-    async with client.session("jarvis-appium") as session:
+    async with client.session("jarvis-appium-sse") as session:
         tools = await load_mcp_tools(session)
         select_platform = next(t for t in tools if t.name == "select_platform")
         create_session = next(t for t in tools if t.name == "create_session")
