@@ -208,5 +208,5 @@ __marimo__/
 .vscode/mcp.json
 
 
-agent_screenshot.jpg
 capabilities_*.json
+*_screenshot.*
