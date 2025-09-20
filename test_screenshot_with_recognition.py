@@ -64,16 +64,22 @@ async def main():
             img.save("agent_screenshot.jpg", "JPEG", quality=80)
             print("agent_screenshot.jpg 保存完了")
 
+            # Vision API用にJPEG形式でbase64化
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG")
+            img_bytes_jpeg = buf.getvalue()
+            image_url = "data:image/jpeg;base64," + base64.b64encode(img_bytes_jpeg).decode()
+
             # LangChain ChatOpenAI (vision対応) で画像を入力
             llm = ChatOpenAI(
                 model="gpt-4.1",
                 temperature=0.0,
             )
-            image_url = "data:image/jpeg;base64," + base64.b64encode(img_bytes).decode()
+
             messages = [
                 SystemMessage(content="あなたは優秀なモバイルアプリのUI解析アシスタントです。ユーザーの指示に合う最も適切な要素をロケータと画像の両方から判断してください。回答には必ず理由を添えてください。"),
                 HumanMessage(content=[
-                    {"type": "text", "text": "左上に矢印が右上と左下に広がるような図のアイコンを押したいです。画面構成のロケータ: " + str(locator)},
+                    {"type": "text", "text": "ツールバーに存在するGUIを教えて。画面構成のロケータ: " + str(locator)},
                     {"type": "image_url", "image_url": {"url": image_url}}
                 ])
             ]
