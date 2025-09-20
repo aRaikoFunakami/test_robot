@@ -51,67 +51,74 @@ class PlanExecute(TypedDict):
 
 # --- プランモデル ---
 class Plan(BaseModel):
-    steps: List[str] = Field(description="different steps to follow, should be in sorted order")
+    steps: List[str] = Field(description="実行すべき手順の一覧（順序通りに並べる）")
 
 # --- 応答モデル ---
 class Response(BaseModel):
     response: str
 
 class Act(BaseModel):
-    action: Union[Response, Plan] = Field(description="Action to perform. If you want to respond to user, use Response. If you need to further use tools to get the answer, use Plan.")
+    action: Union[Response, Plan] = Field(description="実行するアクション。ユーザーに応答する場合はResponse、さらにツールを使用してタスクを実行する場合はPlanを使用してください。")
 
 # --- シンプルなプランナークラス ---
 class SimplePlanner:
     """テスト用のシンプルなプランナー"""
     def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        self.llm = ChatOpenAI(model="gpt-4.1", temperature=0)
     
     async def create_plan(self, user_input: str, locator: str = "", image_url: str = "") -> Plan:
-        content = f"""For the given objective, come up with a simple step by step plan.
-This plan should involve individual tasks, that if executed correctly will yield the correct answer.
-Do not add any superfluous steps. The result of the final step should be the final answer.
-Make sure that each step has all the information needed - do not skip steps.
+        content = f"""与えられた目標に対して、シンプルなステップバイステップの計画を作成してください。
+この計画は、正しく実行されれば正解を得られる個別のタスクで構成される必要があります。
+不要なステップは追加しないでください。最終ステップの結果が最終的な答えとなります。
+各ステップに必要な情報がすべて含まれていることを確認し、ステップを飛ばさないでください。
 
-Objective: {user_input}"""
+目標: {user_input}"""
         
         if locator:
-            content += f"\n\nScreen locator information: {locator}"
+            content += f"\n\n画面ロケーター情報: {locator}"
         
         messages = [SystemMessage(content=content)]
         
         if image_url:
             messages.append(HumanMessage(content=[
-                {"type": "text", "text": "Based on this screen, create the plan."},
+                {"type": "text", "text": "この画面に基づいて計画を作成してください。"},
                 {"type": "image_url", "image_url": {"url": image_url}}
             ]))
         else:
-            messages.append(HumanMessage(content="Create the plan for this objective."))
+            messages.append(HumanMessage(content="この目標のための計画を作成してください。"))
         
         structured_llm = self.llm.with_structured_output(Plan)
         plan = await structured_llm.ainvoke(messages)
         return plan
     
     async def replan(self, state: PlanExecute, locator: str = "", image_url: str = "") -> Act:
-        content = f"""Your objective was: {state["input"]}
-Your original plan was: {str(state["plan"])}
-You have currently done the follow steps: {str(state["past_steps"])}
+        content = f"""あなたの目標: {state["input"]}
+元の計画: {str(state["plan"])}
+現在完了したステップ: {str(state["past_steps"])}
 
-Update your plan accordingly. If an error occurred in the previous step, take the error into account and come up with an alternative approach.
-If there are any steps remaining, always return them as a Plan.
-Only use Response if absolutely no steps remain and the user can be informed of completion."""
+重要な指示:
+1. メインの目標が完全に達成されているかを必ず分析してください
+2. メインの目標を完了するために残りのステップがある場合は、必ず残りのステップを含むPlanを返してください
+3. 全体の目標が100%完了し、これ以上のアクションが不要な場合のみResponseを返してください
+4. 次に必要なアクションが見えているだけでResponseを返さないでください - 実際にそれを行うためのPlanを提供してください
+5. 次に取るべきアクションが見える場合は、それをPlanに含めてください
+
+前のステップでエラーが発生した場合は、それを考慮して代替アプローチを考えてください。
+
+覚えておいてください: あなたの仕事は、現在の状態を観察するだけでなく、実行可能なステップを提供することです。"""
         
         if locator:
-            content += f"\n\nCurrent screen locator information: {locator}"
+            content += f"\n\n現在の画面ロケーター情報: {locator}"
         
         messages = [SystemMessage(content=content)]
         
         if image_url:
             messages.append(HumanMessage(content=[
-                {"type": "text", "text": "Based on the current screen state, should I continue with the plan or provide a response?"},
+                {"type": "text", "text": "現在の画面状態に基づいて、目標を完了するための残りのステップは何ですか？残りのステップがある場合はPlanとして返してください。目標が完全に達成された場合のみResponseを使用してください。"},
                 {"type": "image_url", "image_url": {"url": image_url}}
             ]))
         else:
-            messages.append(HumanMessage(content="Should I continue with the plan or provide a response?"))
+            messages.append(HumanMessage(content="目標を完了するための残りのステップは何ですか？残りのステップがある場合はPlanとして返してください。"))
         
         structured_llm = self.llm.with_structured_output(Act)
         act = await structured_llm.ainvoke(messages)
@@ -165,32 +172,32 @@ def create_workflow_functions(planner: SimplePlanner, agent_executor, screenshot
     async def execute_step(state: PlanExecute):
         plan = state["plan"]
         if not plan:
-            return {"past_steps": [("error", "Plan is empty")]}
+            return {"past_steps": [("error", "計画が空です")]}
         
         plan_str = "\n".join(f"{i + 1}. {step}" for i, step in enumerate(plan))
         task = plan[0]
-        task_formatted = f"""For the following plan: {plan_str}\n\nYou are tasked with executing step 1: {task}. if calling tools, return the output of the tool calls directly. Do not add any extra commentary."""
+        task_formatted = f"""以下の計画について: {plan_str}\n\nあなたはステップ1の実行を担当します: {task}。ツールを呼び出す場合は、ツール呼び出しの出力を直接返してください。余計なコメントは追加しないでください。"""
         
         try:
             agent_response = await agent_executor.ainvoke(
                 {"messages": [("user", task_formatted)]}
             )
-            print(Fore.RED + f"Agent Response for step '{task}': {agent_response['messages'][-1].content}")
+            print(Fore.RED + f"ステップ '{task}' のエージェント応答: {agent_response['messages'][-1].content}")
             return {
                 "past_steps": [(task, agent_response["messages"][-1].content)],
             }
         except Exception as e:
-            print(Fore.RED + f"Error in execute_step: {e}")
-            return {"past_steps": [(task, f"Error: {str(e)}")]}
+            print(Fore.RED + f"execute_stepでエラー: {e}")
+            return {"past_steps": [(task, f"エラー: {str(e)}")]}
 
     async def plan_step(state: PlanExecute):
         try:
             locator, image_url = await generate_screen_info(screenshot_tool, generate_locators)
             plan = await planner.create_plan(state["input"], locator, image_url)
-            print(Fore.GREEN + f"Generated Plan: {plan}")
+            print(Fore.GREEN + f"生成された計画: {plan}")
             return {"plan": plan.steps, "replan_count": 0}  # 初期化時はreplan_countを0に設定
         except Exception as e:
-            print(Fore.RED + f"Error in plan_step: {e}")
+            print(Fore.RED + f"plan_stepでエラー: {e}")
             # フォールバック: 基本的なプランを作成
             basic_plan = await planner.create_plan(state["input"])
             return {"plan": basic_plan.steps, "replan_count": 0}
@@ -268,8 +275,8 @@ async def main():
         past_steps.append(("create_session", str(session_result)))
 
         # エージェントエグゼキューターを作成
-        llm = ChatOpenAI(model="gpt-4o", temperature=0)
-        prompt = "You are a helpful assistant."
+        llm = ChatOpenAI(model="gpt-4.1", temperature=0)
+        prompt = "あなたは親切なアシスタントです。与えられたタスクを正確に実行してください。"
         agent_executor = create_react_agent(llm, tools, prompt=prompt)
 
         # プランナーを作成
@@ -293,9 +300,9 @@ async def main():
         app = workflow.compile()
 
         # 実行
-        knowhow = "ユーザーや計画が「Enter（エンター）を押す」と指示した場合、必ずソフトウェアキーボードを呼び出して、Enterキークリックしなさい。矢印アイコン（→）や (↵) がエンターキーである場合が多いです。"
+        knowhow = ""
         inputs = {
-            "input": knowhow + "Androidで動作するChromeを起動して、URLバーにyahoo.co.jpを入力する。エンターキーで確定し、yahooのトップページを表示してください。すべて日本語で回答してください。",
+            "input": knowhow + "Androidで動作するChromeを起動して、メニューを開いて、新しいタブを開く。すべて日本語で回答してください。",
             "past_steps": past_steps,
             "replan_count": 0  # 初期化
         }
