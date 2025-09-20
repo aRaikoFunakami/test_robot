@@ -47,6 +47,7 @@ class PlanExecute(TypedDict):
     plan: List[str]
     past_steps: Annotated[List[Tuple], operator.add]
     response: str
+    replan_count: int  # リプラン回数の追跡
 
 # --- プランモデル ---
 class Plan(BaseModel):
@@ -154,8 +155,12 @@ async def generate_screen_info(screenshot_tool, generate_locators):
         return str(locator), ""
 
 # --- ワークフロー関数の定義 ---
-def create_workflow_functions(planner: SimplePlanner, agent_executor, screenshot_tool, generate_locators):
-    """ワークフロー関数を作成する（セッション内のツールを使用）"""
+def create_workflow_functions(planner: SimplePlanner, agent_executor, screenshot_tool, generate_locators, max_replan_count: int = 5):
+    """ワークフロー関数を作成する（セッション内のツールを使用）
+    
+    Args:
+        max_replan_count: 最大リプラン回数（デフォルト5回）
+    """
     
     async def execute_step(state: PlanExecute):
         plan = state["plan"]
@@ -183,33 +188,54 @@ def create_workflow_functions(planner: SimplePlanner, agent_executor, screenshot
             locator, image_url = await generate_screen_info(screenshot_tool, generate_locators)
             plan = await planner.create_plan(state["input"], locator, image_url)
             print(Fore.GREEN + f"Generated Plan: {plan}")
-            return {"plan": plan.steps}
+            return {"plan": plan.steps, "replan_count": 0}  # 初期化時はreplan_countを0に設定
         except Exception as e:
             print(Fore.RED + f"Error in plan_step: {e}")
             # フォールバック: 基本的なプランを作成
             basic_plan = await planner.create_plan(state["input"])
-            return {"plan": basic_plan.steps}
+            return {"plan": basic_plan.steps, "replan_count": 0}
 
     async def replan_step(state: PlanExecute):
+        current_replan_count = state.get("replan_count", 0)
+        
+        # リプラン回数制限チェック
+        if current_replan_count >= max_replan_count:
+            print(Fore.YELLOW + f"リプラン回数が制限に達しました（{max_replan_count}回）。処理を終了します。")
+            return {
+                "response": f"リプラン回数が制限（{max_replan_count}回）に達したため、処理を終了しました。現在の進捗: {len(state['past_steps'])}ステップ完了。",
+                "replan_count": current_replan_count + 1
+            }
+        
         try:
             locator, image_url = await generate_screen_info(screenshot_tool, generate_locators)
             output = await planner.replan(state, locator, image_url)
-            print(Fore.YELLOW + f"Replanner Output: {output}")
+            print(Fore.YELLOW + f"Replanner Output (replan #{current_replan_count + 1}): {output}")
             
             if isinstance(output.action, Response):
-                return {"response": output.action.response}
+                return {
+                    "response": output.action.response,
+                    "replan_count": current_replan_count + 1
+                }
             else:
-                return {"plan": output.action.steps}
+                return {
+                    "plan": output.action.steps,
+                    "replan_count": current_replan_count + 1
+                }
         except Exception as e:
             print(Fore.RED + f"Error in replan_step: {e}")
             # エラーの場合は終了
-            return {"response": f"エラーが発生しました: {str(e)}"}
+            return {
+                "response": f"エラーが発生しました: {str(e)}",
+                "replan_count": current_replan_count + 1
+            }
 
     def should_end(state: PlanExecute):
+        # レスポンスがある場合は終了
         if "response" in state and state["response"]:
             return END
-        else:
-            return "agent"
+            
+        # それ以外は継続（replan制限チェックはreplan_step内で行う）
+        return "agent"
     
     return execute_step, plan_step, replan_step, should_end
 
@@ -250,8 +276,9 @@ async def main():
         planner = SimplePlanner()
 
         # ワークフロー関数を作成（セッション内のツールを使用）
+        max_replan_count = 10
         execute_step, plan_step, replan_step, should_end = create_workflow_functions(
-            planner, agent_executor, screenshot_tool, generate_locators
+            planner, agent_executor, screenshot_tool, generate_locators, max_replan_count
         )
 
         # ワークフローを構築
@@ -270,6 +297,7 @@ async def main():
         inputs = {
             "input": knowhow + "Androidで動作するChromeを起動して、URLバーにyahoo.co.jpを入力する。エンターキーで確定し、yahooのトップページを表示してください。すべて日本語で回答してください。",
             "past_steps": past_steps,
+            "replan_count": 0  # 初期化
         }
         
         print(Fore.CYAN + "=== Plan-and-Execute Agent 開始 ===")
