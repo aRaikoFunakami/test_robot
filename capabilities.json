@@ -6,8 +6,10 @@
     "appium:platformVersion": "14",
     "appium:udid": "emulator-5554",
     "appium:appPackage": "com.android.chrome",
-    "appium:appActivity": ".MainActivity",
-    "appium:noReset": true,
+    "appium:noReset": false,
+    "appium:autoGrantPermissions": true,
+    "appium:forceAppLaunch": true,
     "appium:newCommandTimeout": 300
   }
 }
+
