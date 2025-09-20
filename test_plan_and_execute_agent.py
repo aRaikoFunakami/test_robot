@@ -300,9 +300,18 @@ async def main():
         app = workflow.compile()
 
         # 実行
-        knowhow = ""
+        knowhow = """
+        1. アプリを実行するときは `appium_activate_app` ツールを使用します。
+        例えば:
+            await appium_activate_app.ainvoke({"id": "com.android.chrome"})
+        2. エンターキーを最後に入力して確定させる場合には、`appium_set_value()` を使う時に最後に '\n' を追加しますを使用します。
+        例えば:
+            await appium_set_value.ainvoke({"args.elementUUID": "xxxx", "args.text": 'www.google.com\n'})
+        """
+        #query = "Androidで動作するChromeを起動して、メニューを開いて、新しいタブを開く。すべて日本語で回答してください。"
+        query = "Androidで動作するChromeを起動して、yahoo.co.jp を開いてください"
         inputs = {
-            "input": knowhow + "Androidで動作するChromeを起動して、メニューを開いて、新しいタブを開く。すべて日本語で回答してください。",
+            "input": knowhow + query,
             "past_steps": past_steps,
             "replan_count": 0  # 初期化
         }
