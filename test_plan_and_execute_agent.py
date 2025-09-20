@@ -107,9 +107,13 @@ Your original plan was this: """ + str(state["plan"]) + """
 
 You have currently done the follow steps: """ + str(state["past_steps"]) + """
 
-Update your plan accordingly. If no more steps are needed and you can return to the user, then respond with that. Otherwise, fill out the plan. Only add steps to the plan that still NEED to be done. Do not return previously done steps as part of the plan.
+Use the following current locator information: """ + str(locator) + """
 
-Use the following current locator information: """ + str(locator)),
+Update your plan accordingly.
+If an error occurred in the previous step, take the error into account and come up with an alternative approach.
+If there are any steps remaining, always return them as a Plan.
+Only use Response if absolutely no steps remain and the user can be informed of completion.
+Do not summarize remaining steps in Response; use Plan for actionable steps."""),
             HumanMessage(content=[
                 {"type": "text", "text": "Based on the current screen state, should I continue with the plan or provide a response?"},
                 {"type": "image_url", "image_url": {"url": image_url}}
@@ -244,7 +248,7 @@ async def main():
         global agent_executor
         agent_executor = create_react_agent(llm, tools, prompt=prompt)
 
-        knowhow = "ユーザーや計画が「Enter（エンター）を押す」と指示した場合、必ずソフトウェアキーボードを呼び出して、Enterキーを押すこと。"
+        knowhow = "ユーザーや計画が「Enter（エンター）を押す」と指示した場合、必ずソフトウェアキーボードを呼び出して、Enterキークリックしなさい。矢印アイコン（→）や (↵) がエンターキーである場合が多いです。"
         inputs = {"input": knowhow + "Androidで動作するChromeを起動して、URLバーにyahoo.co.jpを入力する。エンターキーで確定し、yahooのトップページを表示してください。すべて日本語で回答してください。",
                 "past_steps": past_steps,}        
         async for event in app.astream(inputs, config=config):
